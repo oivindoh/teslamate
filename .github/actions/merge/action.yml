@@ -40,6 +40,20 @@ runs:
       run: |
         docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
           $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+    - name: Capture manifest digest
+      id: manifest
+      shell: bash
+      run: |
+        TAG="${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}"
+        DIGEST="sha256:$(docker buildx imagetools inspect "$TAG" --raw | sha256sum | awk '{print $1}')"
+        echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+        echo "manifest list digest: ${DIGEST}"
+    - name: Attest manifest provenance
+      uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+      with:
+        subject-name: ${{ env.REGISTRY_IMAGE }}
+        subject-digest: ${{ steps.manifest.outputs.digest }}
+        push-to-registry: true
     - name: Inspect image
       shell: bash
       run: |
