@@ -104,7 +104,7 @@ runs:
       with:
         subject-name: ${{ inputs.image }}
         subject-digest: ${{ steps.platforms.outputs.amd64 }}
-        predicate-type: 'https://spdx.dev/Document'
+        predicate-type: "https://spdx.dev/Document"
         predicate-path: /tmp/grafana-sbom-amd64.spdx.json
         push-to-registry: true
     - name: Attest grafana SBOM (arm/v7)
@@ -113,7 +113,7 @@ runs:
       with:
         subject-name: ${{ inputs.image }}
         subject-digest: ${{ steps.platforms.outputs.armv7 }}
-        predicate-type: 'https://spdx.dev/Document'
+        predicate-type: "https://spdx.dev/Document"
         predicate-path: /tmp/grafana-sbom-armv7.spdx.json
         push-to-registry: true
     - name: Attest grafana SBOM (arm64)
@@ -122,6 +122,6 @@ runs:
       with:
         subject-name: ${{ inputs.image }}
         subject-digest: ${{ steps.platforms.outputs.arm64 }}
-        predicate-type: 'https://spdx.dev/Document'
+        predicate-type: "https://spdx.dev/Document"
         predicate-path: /tmp/grafana-sbom-arm64.spdx.json
         push-to-registry: true
