@@ -41,25 +41,87 @@ runs:
         sbom: false
         cache-from: type=gha
         cache-to: type=gha,mode=max
-    - name: Generate SBOM for grafana image
+    # The grafana image is built multi-arch in a single build-push-action call,
+    # so steps.build.outputs.digest is the manifest-list digest. Resolve each
+    # per-platform child digest so SBOMs can be scoped to a single arch and
+    # attested to that arch's digest (matching SECURITY.md and the teslamate
+    # per-platform builds). Scanning image@<child-digest> pins syft to that
+    # platform's layers regardless of the runner architecture.
+    - name: Resolve per-platform digests
+      id: platforms
+      if: github.event_name != 'pull_request'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        DIGEST: ${{ steps.build.outputs.digest }}
+      run: |
+        manifests="$(docker buildx imagetools inspect "${IMAGE}@${DIGEST}" --format '{{json .Manifest.Manifests}}')"
+        amd64="$(jq -r '.[] | select(.platform.architecture=="amd64") | .digest' <<<"$manifests")"
+        armv7="$(jq -r '.[] | select(.platform.architecture=="arm" and .platform.variant=="v7") | .digest' <<<"$manifests")"
+        arm64="$(jq -r '.[] | select(.platform.architecture=="arm64") | .digest' <<<"$manifests")"
+        echo "amd64=${amd64}" >> "$GITHUB_OUTPUT"
+        echo "armv7=${armv7}" >> "$GITHUB_OUTPUT"
+        echo "arm64=${arm64}" >> "$GITHUB_OUTPUT"
+        echo "amd64=${amd64} armv7=${armv7} arm64=${arm64}"
+    - name: Generate SBOM (amd64)
+      if: github.event_name != 'pull_request'
       uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
       with:
-        image: ${{ inputs.image }}@${{ steps.build.outputs.digest }}
+        image: ${{ inputs.image }}@${{ steps.platforms.outputs.amd64 }}
         format: spdx-json
-        output-file: /tmp/grafana-sbom.spdx.json
+        output-file: /tmp/grafana-sbom-amd64.spdx.json
+        upload-artifact: false
+        upload-release-assets: false
+    - name: Generate SBOM (arm/v7)
+      if: github.event_name != 'pull_request'
+      uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      with:
+        image: ${{ inputs.image }}@${{ steps.platforms.outputs.armv7 }}
+        format: spdx-json
+        output-file: /tmp/grafana-sbom-armv7.spdx.json
+        upload-artifact: false
+        upload-release-assets: false
+    - name: Generate SBOM (arm64)
+      if: github.event_name != 'pull_request'
+      uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      with:
+        image: ${{ inputs.image }}@${{ steps.platforms.outputs.arm64 }}
+        format: spdx-json
+        output-file: /tmp/grafana-sbom-arm64.spdx.json
         upload-artifact: false
         upload-release-assets: false
     - name: Attest grafana provenance
+      # Skip on pull_request: see build action for the rationale.
+      if: github.event_name != 'pull_request'
       uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
       with:
         subject-name: ${{ inputs.image }}
         subject-digest: ${{ steps.build.outputs.digest }}
         push-to-registry: true
-    - name: Attest grafana SBOM
+    - name: Attest grafana SBOM (amd64)
+      if: github.event_name != 'pull_request'
       uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
       with:
         subject-name: ${{ inputs.image }}
-        subject-digest: ${{ steps.build.outputs.digest }}
+        subject-digest: ${{ steps.platforms.outputs.amd64 }}
         predicate-type: 'https://spdx.dev/Document'
-        predicate-path: /tmp/grafana-sbom.spdx.json
+        predicate-path: /tmp/grafana-sbom-amd64.spdx.json
+        push-to-registry: true
+    - name: Attest grafana SBOM (arm/v7)
+      if: github.event_name != 'pull_request'
+      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      with:
+        subject-name: ${{ inputs.image }}
+        subject-digest: ${{ steps.platforms.outputs.armv7 }}
+        predicate-type: 'https://spdx.dev/Document'
+        predicate-path: /tmp/grafana-sbom-armv7.spdx.json
+        push-to-registry: true
+    - name: Attest grafana SBOM (arm64)
+      if: github.event_name != 'pull_request'
+      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      with:
+        subject-name: ${{ inputs.image }}
+        subject-digest: ${{ steps.platforms.outputs.arm64 }}
+        predicate-type: 'https://spdx.dev/Document'
+        predicate-path: /tmp/grafana-sbom-arm64.spdx.json
         push-to-registry: true
